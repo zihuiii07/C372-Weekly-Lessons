@@ -1,26 +1,15 @@
 // Pet Care Journal System
 const express = require('express');
-const mysql = require('mysql2');
-const multer = require('multer');
 const session = require('express-session');
 const flash = require('connect-flash');
-const crypto = require('crypto');
+// *changes: mysql, multer, crypto setup moved into config/ and helpers/, now required from there
+const connection = require('./config/db');
+const upload = require('./config/upload');
+const { isLoggedIn, isAdmin } = require('./middleware/auth'); // *changes: middleware moved to middleware/auth.js
 const app = express();
-const PORT = 3000;
+const PORT = 3000; 
 
 app.use(flash());
-
-// Set up multer for file uploads
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, 'public/images'); // Directory to save uploaded files
-    },
-    filename: (req, file, cb) => {
-        cb(null, Date.now() + '_' + file.originalname); 
-    }
-});
-
-const upload = multer({ storage: storage });
 
 // View Engine and Middleware
 app.set('view engine', 'ejs');
@@ -33,118 +22,12 @@ app.use(session({
   saveUninitialized: true
 }));
 
-// MySQL Connection
-const connection = mysql.createConnection({
-  host: 'localhost',
-  user: 'root',
-  password: 'NewPass123',
-  database: 'petcare'
-});
-
-function sha256Hash(value) {
-  return crypto.createHash('sha256').update(value).digest('hex');
-}
-
-// Auth Middleware
-function isLoggedIn(req, res, next) {
-  if (req.session.user) return next();
-  res.redirect('/login');
-}
-
-function isAdmin(req, res, next) {
-  if (req.session.user && req.session.user.role === 'admin') return next();
-  res.send('Access Denied!');
-}
-
 // =========================
-// Authentication Routes
+// Routers
 // =========================
-
-// Sign Up Page
-app.get('/signup', (req, res) => {
-  res.render('signup', { session: req.session });
-});
-
-// Handle Sign Up Submission
-app.post('/signup', upload.single('pet_image'), (req, res) => {
-  const { username, password, name, role, pet_name, species, breed, age } = req.body;
-  //const petImage = req.file ? req.file.filename : '';
-  let petImage;
-    if (req.file) {
-        petImage = req.file.filename; // Save only the filename
-    } else {
-        petImage = null;
-    }
-
-  const hashedPassword = sha256Hash(password);
-  const sqlUser = 'INSERT INTO users (username, password, name, role) VALUES (?, ?, ?, ?)';
-  connection.query(sqlUser, [username, hashedPassword, name, role], (err, result) => {
-    if (err) {
-      console.error('Error creating user:', err);
-      req.flash('error', 'Sign up failed. Please try again.');
-      return res.redirect('/signup');
-    }
-
-    const userId = result.insertId;
-    console.log(userId);
-    console.log(petImage);
-    const sqlPet = 'INSERT INTO pets (owner_id, name, species, breed, age, image ) VALUES (?, ?, ?, ?, ?, ?)';
-    connection.query(sqlPet, [userId, pet_name, species, breed, age, petImage], (err2) => {
-      if (err2) {
-        console.error('Error creating pet:', err2);
-        req.flash('error', 'Sign up failed while saving pet. Please try again.');
-        return res.redirect('/signup');
-      }
-
-      res.redirect('/login');
-    });
-  });
-});
-
-
-// Login Page
-app.get('/login', (req, res) => {
-  res.render('login', { messages: req.flash('success'), 
-        errors: req.flash('error'), session: req.session });
-});
-
-// Handle Login
-app.post('/login', (req, res) => {
-  const { username, password } = req.body;
-  const hashedPassword = sha256Hash(password);
-  const sql = 'SELECT * FROM users WHERE username = ? AND password = ?';
-  connection.query(sql, [username, hashedPassword], (err, results) => {
-    if (err) {
-      console.error('Login query error:', err);
-      req.flash('error', 'Unable to log in. Please check database setup.');
-      return res.redirect('/login');
-    }
-
-    if (results.length > 0) {
-      req.session.user = results[0];
-      req.flash('success', 'Login successful!');
-      if (results[0].role === 'admin') {
-        res.redirect('/admin/dashboard');
-      } else {
-        res.redirect('/journals');
-      }
-    } else {
-      req.flash('error', 'Invalid username or password.');
-      return res.redirect('/login');
-    }
-  });
-});
-
-// Logout
-app.get('/logout', (req, res) => {
-  req.session.destroy();
-  res.redirect('/login');
-});
-
-// Index Page
-app.get('/', (req, res) => {
-  res.render('index', { session: req.session });
-});
+// *changes: sign up / login / logout / home routes moved out of app.js into routes + controllers
+app.use(require('./routes/authRoutes'));
+app.use(require('./routes/homeRoutes'));
 
 // =========================
 // Dashboard (Admin)
