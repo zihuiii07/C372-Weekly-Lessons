@@ -54,3 +54,22 @@ Things it pointed out but we left alone on purpose (spec says structure only, no
 - Middleware order kept the same as before (flash, view engine, urlencoded, static, session, then routes).
 - Checked: all files pass node --check, app loads with all requires working, and compared the route list against the Week 2 starting app.js - same 19 method + URL pairs.
 - Views, db.sql and the database not touched.
+
+## Week 3 – L5 prepare payment spec + GET endpoint (Fri 13 Nov)
+
+- Made Week03/Lesson05/PetCareApp as a copy of my Week02 app (no node_modules), added specs/prepare-payment.md with the scaffold from the slides.
+- Wrote the first draft of the spec myself using the lesson scope table (services, price from server, JSON, 404 for unknown, no login, no real payment).
+- Asked Claude to review the draft only (gaps + questions, no rewriting, no code). It came back with 6 points:
+  1. AC1–AC3 didn't say which service ID to request – accepted, added "Service ID 1/2/3 →".
+  2. Scope line "should not ... add pages or login" could be read as "don't add login" – accepted, reworded to "does not require login (classroom mock only)".
+  3. Request section didn't say what the input is – accepted, added serviceId in the URL, no request body.
+  4. Section 5 had curly quotes and didn't say currency/status are strings with fixed values – accepted, fixed quotes and added the example JSON.
+  5. My open question about ?amount=1 clashed with section 3 (price never from client) – accepted, decided the client amount is ignored and moved it into section 3 (matches the L6 Postman price check, amount should stay 35).
+  6. No rule for non-numeric IDs like /payments/prepare/abc – accepted as an open question only, not deciding it now.
+- Accepted all 6, Claude applied only those changes. Checked the diff.
+- Asked Claude for a file plan before any code (slides Exercise 4 prompt). Plan: data/mockServices.js, controllers/paymentController.js, routes/paymentRoutes.js, mount in app.js. No packages, DB, EJS or gateway. It flagged that /payments/prepare/abc will just give 404 because it isn't found – no extra validation added since the spec leaves it as an open question. Approved the plan.
+- data/mockServices.js – catalogue array: 1 Vaccination 35, 2 Pet Grooming 50, 3 Boarding 80.
+- controllers/paymentController.js – preparePayment: Number(serviceId), find in catalogue, 404 {"error":"Service not found"} if missing, else 200 with serviceId, serviceName, amount (from catalogue), currency "sgd", status "READY_FOR_PAYMENT". Exported as module.exports = { preparePayment } so L6 can add createMockPayment.
+- routes/paymentRoutes.js – GET /payments/prepare/:serviceId, no isLoggedIn (spec says no login).
+- app.js – one line added to mount paymentRoutes after the journal routes.
+- Quick check by calling the controller directly: IDs 1/2/3 give 200 with 5 fields and 35/50/80, 999 gives 404, ?amount=1 still gives 35, abc gives 404.
