@@ -73,3 +73,25 @@ Things it pointed out but we left alone on purpose (spec says structure only, no
 - routes/paymentRoutes.js – GET /payments/prepare/:serviceId, no isLoggedIn (spec says no login).
 - app.js – one line added to mount paymentRoutes after the journal routes.
 - Quick check by calling the controller directly: IDs 1/2/3 give 200 with 5 fields and 35/50/80, 999 gives 404, ?amount=1 still gives 35, abc gives 404.
+- Tested in browser: /payments/prepare/1, 2, 3 show the right JSON, 999 shows {"error":"Service not found"}. The browser doesn't show the 404 number, only the JSON – can see it in DevTools > Network (or Postman in L6). ?amount=1 still 35. Login still works. Committed.
+
+## Week 3 – L6 Postman + POST mock payment (Fri 13 Nov)
+
+- Made Week03/Lesson06/PetCareApp as a copy of my Lesson05 app (Lesson05 left as is for reference).
+- services/mockPaymentProvider.js – new, supplied code from the slides. Returns providerPaymentId 'mock_' + timestamp, the merchantReference, and status = testStatus or PENDING.
+- controllers/paymentController.js – added the MockProvider require at the top, pasted createMockPayment from createMockPayment.txt after preparePayment, exports now { preparePayment, createMockPayment }. GET code not touched.
+- routes/paymentRoutes.js – added POST /payments/mock/:serviceId under the GET route.
+- app.js – added app.use(express.json()) before the routes so the JSON body (testStatus) can be read.
+- Quick check calling the controller directly:
+  MC1 /1 PENDING -> 200, AWAITING_PAYMENT
+  MC2 /2 APPROVED -> 200, CONFIRMED
+  MC3 /3 DECLINED -> 200, PAYMENT_FAILED
+  MC4 /999 -> 404 Service not found
+  MC5 /2 with {} -> defaults to PENDING, AWAITING_PAYMENT
+  GET /payments/prepare/1 still the same 5 fields.
+- Noticed (not changed, it's supplied code): if testStatus is something not in the map, e.g. "FOO", bookingStatus is undefined so it just disappears from the JSON. Price always comes from the catalogue, the client can only send testStatus.
+- Tested in Postman (desktop app, Sun 15 Nov night):
+  GET /payments/prepare/1, 2, 3 -> 200 with the right name and amount; /999 -> 404 Service not found; /1?amount=1 -> still 35. Postman shows the status code, which the browser didn't.
+  POST /payments/mock MC1–MC5 all matched (PENDING -> AWAITING_PAYMENT, APPROVED -> CONFIRMED, DECLINED -> PAYMENT_FAILED, 999 -> 404, {} -> PENDING).
+  First POST attempt I sent to /payments/prepare/1 by mistake and got 404 "Cannot POST" – that route only has GET, the POST one is /payments/mock/:serviceId.
+  For GET requests body is set to none, for POST body is raw JSON.
