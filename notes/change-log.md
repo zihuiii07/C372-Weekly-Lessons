@@ -95,3 +95,41 @@ Things it pointed out but we left alone on purpose (spec says structure only, no
   POST /payments/mock MC1–MC5 all matched (PENDING -> AWAITING_PAYMENT, APPROVED -> CONFIRMED, DECLINED -> PAYMENT_FAILED, 999 -> 404, {} -> PENDING).
   First POST attempt I sent to /payments/prepare/1 by mistake and got 404 "Cannot POST" – that route only has GET, the POST one is /payments/mock/:serviceId.
   For GET requests body is set to none, for POST body is raw JSON.
+
+## Week 4 – L8 service booking (Sun 15 – Mon 16 Nov, late night)
+
+Setup:
+- Made Week04/Lesson08/PetCareApp as a copy of my Lesson06 app. Added specs/service-booking.md, specs/service-booking-implementation.md, views/services.ejs, views/bookings.ejs and db-lesson08-extension.sql from Resources L8.
+- Mistake: in Workbench I ran db.sql twice by accident instead of the L8 extension script (the tab was called "db"). It reset users/pets/journal back to the sample data, so my test1/test2 users were gone – nothing important, and clara/Mira came back which L8 needs. Then copied the extension script into the project, pasted it into a new query tab and ran it once: services / service_bookings / payments created, 8 services, 0 bookings, 0 payments, clara owns Mira (pet 5). The yellow warning on CREATE TABLE services is only about the int display width, harmless.
+
+Planning (slides Exercise 5 prompt 1):
+- Claude read both specs, the SQL and the two EJS shells and proposed: serviceModel, serviceBookingModel, serviceController, serviceRoutes, mount in app.js, add navbar links. Shells used as is.
+- It flagged a conflict: implementation spec section 6 says use one connection from a shared pool for the transaction, but config/db.js (mine and the lecturer's L8 copy) uses a single createConnection. On a single shared connection another request's query could land in the middle of the transaction.
+  Option A: switch to createPool (existing models keep working because pool.query is the same).
+  Option B: keep the single connection.
+  I chose option A to follow the spec.
+- Not added (spec says not to): real payment, duplicate booking check, max booking date, cancel, status changes.
+
+Build:
+- config/db.js – createConnection -> createPool (connectionLimit 10). One thing that changes: with a pool, a wrong MySQL password no longer crashes the app at start-up, it shows up on the first query instead (e.g. login says "Unable to log in").
+- models/serviceModel.js – getActiveServices: SELECT id, name, price FROM services WHERE is_active = 1 ORDER BY name.
+- models/serviceBookingModel.js –
+  createPendingBooking: gets one connection from the pool, beginTransaction, INSERT ... SELECT into service_bookings that only inserts if the pet's owner_id is the logged-in user AND the service is active, price taken from services.price. If 0 rows inserted -> rollback, return null (unavailable). Then inserts the payment using the booking's booked_price, status pending, payment_reference left NULL. Commit only after both. Any error -> rollback and pass the error up. Connection released on every path, callback only called once.
+  getBookingsByOwner: joins bookings + pets + services, LEFT JOIN payments, only this owner's pets, newest first, booking_date formatted as YYYY-MM-DD in SQL.
+- controllers/serviceController.js – listServices, createBooking, listBookings. Owner id always from req.session.user.id. Validation: petId/serviceId must be whole numbers > 0, date must be YYYY-MM-DD, a real date (2027-02-30 rejected), and today or later using the computer's local date. Exact messages from spec section 7. Load errors return 500 with "Unable to load pets." / "Unable to load services." / "Unable to load booking history.". DB save error redirects to /services?petId=...
+- routes/serviceRoutes.js – GET /services, POST /services/book, GET /bookings, all isLoggedIn.
+- app.js – mounted serviceRoutes after paymentRoutes.
+- views/partials/navbar.ejs – added "Book a Service" and "Booking History" links for logged-in users.
+
+Checks before browser testing (no DB, using a fake pool):
+- Transaction: success = begin, booking, payment, commit, release. Unavailable = rollback, null. Booking insert fails / payment insert fails / commit fails / can't start transaction / can't get connection -> error, rolled back where started, connection released, callback once, never success. (This covers AC6, which is hard to test by clicking.)
+- Validation: today and a future date accepted; yesterday, 2027-02-30, 15/01/2027, missing date, petId 0 / -2 / abc, empty serviceId, no body -> "Choose a pet, service, and valid booking date."
+- Rendered services.ejs and bookings.ejs with sample data: pet preselect works, S$25.00 shows, no-pets message, "No payment record" shows when payment is null, navbar links show.
+- Browser testing (Mon 16 Nov ~1am), sample logins from db.sql (clara/amy/ben user123, admin1 admin123):
+  AC1 – clara booked Mira + Basic Bath for today -> went to Booking History with "Booking created. Payment is pending; no payment has been processed.", row shows S$25.00, pending, pending.
+  AC2 – future date also accepted.
+  AC7 – logged in as amy, Booking History shows "You have no bookings yet." (clara's bookings not shown). Clara sees her own.
+  AC8 – logged out, /services and /bookings redirect to /login.
+  Regression – amy's journals page and the admin user details page still work.
+  The Booking History link was hidden at first – the window was narrow so the navbar links were inside the ☰ menu.
+  AC3–AC5 not tried in the browser (the form's dropdown / date picker stops most bad input) – covered by the controller checks above. AC6 covered by the fake-pool checks above.
